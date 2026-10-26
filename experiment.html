@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading</title>
+<script src="lib/jspsych.js"></script>
+<script src="lib/plugin-html-keyboard-response.js"></script>
+<script src="lib/plugin-html-button-response.js"></script>
+<script src="lib/plugin-fullscreen.js"></script>
+<script src="lib/plugin-browser-check.js"></script>
+<script src="lib/plugin-motr.js"></script>
+<script src="lib/plugin-call-function.js"></script>
+<script src="stimuli.js"></script>
+<link rel="stylesheet" href="lib/jspsych.css">
+<style>
+  body { background:#fff; color:#111; font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .prose { max-width:760px; margin:0 auto; text-align:left; font-size:17px; line-height:1.45; }
+  .question { font-size:26px; }
+  .keys { color:#555; font-size:16px; margin-top:30px; }
+  kbd { border:1px solid #999; border-radius:4px; padding:1px 7px; background:#f4f4f4; font-family:monospace; }
+  #size-warning { display:none; position:fixed; inset:0; background:rgba(255,255,255,.97); z-index:99;
+                  align-items:center; justify-content:center; font-size:20px; text-align:center; padding:40px; }
+</style>
+</head>
+<body>
+<div id="size-warning"><p>Please make this window larger (or reset the browser zoom to 100%).<br>This page needs at least 1000 × 650 pixels.</p></div>
+<script>
+/* ============================================================================================================
+   TW-MoTR (Experiment 2 of the transposed-word project): grammaticality judgments of the 80 sentences of
+   Experiment 1, read with Mouse Tracking for Reading (MoTR) under one of five display conditions.
+
+   Design (between participants): Window (one word vs. three words sharp) x Revisitability (free vs. one-way),
+   plus an anchor condition in which the whole sentence is sharp, as in the reading group of Experiment 1:
+     W1F  one-word window, free       W1O  one-word window, one-way (the reader cannot go back)
+     W3F  three-word window, free     W3O  three-word window, one-way
+     ALL  whole sentence sharp once the pointer has reached the first word (anchor)
+   In the one-word conditions the transposed pair (Words 3 and 4) is never sharp at the same time. In the one-way
+   conditions no word can be read again, as in listening. Words that are not sharp are shown as a grey bar, so their
+   lengths cannot be seen. Each participant reads 120 sentences: all 80 items (40 as TW sequences, 40 as grammatical
+   counterparts; two lists), the 20 scrambled controls and the 20 grammatical fillers of Experiment 1.
+
+   Assignment: condition x list (10 cells) is drawn from DataPipe's balanced condition assignment (set the number of
+   conditions to 10 in DataPipe). If that request fails, the cell is drawn at random and the data say so. For tests,
+   ?cond=W1F&list=0 forces a cell.
+   Links (see 0_setup_guides):  Prolific  experiment.html?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}
+                                SONA      experiment.html?id=%SURVEY_CODE%
+                                test      experiment.html?cond=W1F&list=0   (no ID: the data file is downloaded, not uploaded)
+   AI assistance: this file was drafted with Claude (Anthropic) under our direction and then reviewed, run and
+   checked by us (see the project README).
+   ============================================================================================================ */
+const CONFIG = {
+  DATAPIPE_ID:   "pnrTydrQfPAK", // the DataPipe experiment ID (TW_MoTR_RawData_GoogleDrive; empty: the file is downloaded instead, tests only)
+  BALANCED_ASSIGNMENT: true,// draw condition x list from DataPipe (needs DATAPIPE_ID and 10 conditions set in DataPipe)
+  QUALTRICS_URL: "https://utrgv.co1.qualtrics.com/jfe/form/SV_5u8EXCsERij65PU",        // follow-up survey; uid, source, pid, cond, list and the Prolific IDs are appended
+  PROLIFIC_SCREENOUT_URL: "", // Prolific completion URL of the "screened out" path (no mouse, wrong device, no consent)
+  PROLIFIC_COMPLETION_URL: "",// used only if QUALTRICS_URL is empty (the survey normally returns people to Prolific)
+  SONA_CREDIT_URL: "",      // used only if QUALTRICS_URL is empty
+  IRB_PROTOCOL:  "IRB-19-0292-UNIV",
+  IRB_CONTACT:   "If you have questions about your rights as a research participant, or concerns or complaints about this study, please contact the UTRGV Institutional Review Board at 956-665-3364 or irb@utrgv.edu.",
+  LAB_NAME:      "Cognitive Science and Language Laboratory",
+  CONTACT:       "Dr. Yu-Cheng Lin, yucheng.lin@utrgv.edu",
+  PAYMENT_TEXT:  "SONA research credit",
+  MINUTES:       25,        // estimated duration of the reading task (the questionnaire adds about 5 minutes)
+  /* Two-stage data collection (see README and 0_setup_guides, Step 8). Stage 1: all five conditions, DataPipe set to
+     10 conditions. Stage 2 (only if interim_analysis.R says so): the four factorial conditions, DataPipe set to 8. */
+  STAGE: 1,
+  STAGE_CONDITIONS: { 1: ["W1F", "W1O", "W3F", "W3O", "ALL"], 2: ["W1F", "W1O", "W3F", "W3O"] },
+  CONDITIONS: {             // span_left / span_right: sharp words on each side of the word under the pointer
+    W1F: { span_left: 0,  span_right: 0,  oneway: false },
+    W1O: { span_left: 0,  span_right: 0,  oneway: true  },
+    W3F: { span_left: 1,  span_right: 1,  oneway: false },
+    W3O: { span_left: 1,  span_right: 1,  oneway: true  },
+    ALL: { span_left: 99, span_right: 99, oneway: false }
+  },
+  MOTR: { reveal: "words", mask: "bar", focus_dx: 0, focus_dy: 0, text_width: 820, font_size: 26, line_height: 1.6, end_mode: "exit" },
+                            // focus_dx/dy 0: the sharp word is the word under the pointer tip, as the instructions say.
+                            // mask "bar": unread words are a grey bar, so word lengths give no cue (see plugin-motr.js).
+                            // end_mode "exit": moving past the last word ends reading, so no Done button has to be reached.
+  REQUIRE_MOUSE: true,      // Prolific and SONA sessions must use a separate mouse (asked first; others are screened out)
+  NBLOCK: 4,
+  ITI: 600,
+  QUALITY: { words_seen_min: 0.80, filler_acc_min: 0.70 },   // reminders at the breaks (exclusions are decided in analysis.R)
+  DEBUG: false
+};
+
+/* ---------- participant ---------- */
+const qs = new URLSearchParams(location.search);
+const par = (ns) => { for (const n of ns) { const v = qs.get(n); if (v) return v; } return null; };
+const PID_PROLIFIC = par(["PROLIFIC_PID", "prolific_pid"]);
+const PID_SONA = par(["id", "sona_id", "survey_code", "SURVEY_CODE"]);
+/* The session code links the task file with the questionnaire. Its last character is a check character (a weighted
+   sum of the other characters, mod 36), so a code typed with one wrong or two swapped characters is recognised as
+   wrong by merge_survey.R instead of being matched to nobody or to someone else. */
+const B36 = "0123456789abcdefghijklmnopqrstuvwxyz";
+function withCheck(s) { let t = 0; for (let i = 0; i < s.length; i++) t += (i + 1) * B36.indexOf(s[i]); return s + B36[t % 36]; }
+const SUBJECT = {
+  source: PID_PROLIFIC ? "prolific" : (PID_SONA ? "sona" : "direct"),
+  external_id: PID_PROLIFIC || PID_SONA || null,
+  uid: withCheck(Math.random().toString(36).slice(2, 10).padEnd(8, "0") + Date.now().toString(36))
+};
+const CODES = Object.keys(CONFIG.CONDITIONS);               // every condition (a ?cond= link may force any of them)
+const ACTIVE = CONFIG.STAGE_CONDITIONS[CONFIG.STAGE];        // the conditions drawn in the current stage
+let COND, LIST, COND_ASSIGNED, CC, WINDOW, KEYMAP = null;
+const QC = { lowSeen: false, lowAcc: false };
+let ABORTED = "", CONSENTED = false, BASE = {};
+
+/* fetch with a time limit, so a stalled server can never leave a blank page or "Saving..." for ever */
+function fetchT(url, opt, ms) {
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms);
+  return fetch(url, Object.assign({}, opt, { signal: ac.signal })).finally(() => clearTimeout(t));
+}
+/* A cell forced by the link (?cond=W1F&list=0, for tests and top-ups) must be valid: a mistyped link stops with a
+   message before anything starts, instead of silently drawing a random condition. */
+function linkCell() {
+  const cp = qs.get("cond"), lp = qs.get("list");
+  if (cp === null && lp === null) return null;
+  if (!CODES.includes((cp || "").toUpperCase()) || !(lp === null || lp === "0" || lp === "1")) return "bad_link";
+  return { cond: cp.toUpperCase(), list: lp === null ? (Math.random() < 0.5 ? 0 : 1) : +lp };
+}
+/* Condition x list, drawn only AFTER consent, so that screen-outs, people who decline and Prolific previews do not use
+   up cells of DataPipe's balanced sequence. */
+async function assign() {
+  const lc = linkCell();
+  if (lc) { COND = lc.cond; LIST = lc.list; COND_ASSIGNED = "link"; return; }
+  const nCells = ACTIVE.length * 2;   // DataPipe's "number of conditions" must equal this (10 in stage 1, 8 in stage 2)
+  if (CONFIG.BALANCED_ASSIGNMENT && CONFIG.DATAPIPE_ID) {
+    try {   // DataPipe returns the next condition of a balanced sequence (0 .. number of conditions - 1)
+      const r = await fetchT("https://pipe.jspsych.org/api/condition/", { method: "POST", headers: { "Content-Type": "application/json", Accept: "*/*" },
+                                                                          body: JSON.stringify({ experimentID: CONFIG.DATAPIPE_ID }) }, 6000);
+      const j = await r.json(); const n = parseInt(j.condition, 10);
+      if (r.ok && n >= 0 && n < nCells) { COND = ACTIVE[n % ACTIVE.length]; LIST = Math.floor(n / ACTIVE.length); COND_ASSIGNED = "datapipe"; return; }
+    } catch (e) { /* timeout or no answer: fall through to random */ }
+  }
+  const n = Math.floor(Math.random() * nCells);
+  COND = ACTIVE[n % ACTIVE.length]; LIST = Math.floor(n / ACTIVE.length); COND_ASSIGNED = "random";
+}
+
+const jsPsych = initJsPsych({
+  on_finish: () => {
+    if (!CONSENTED) { redirect(); return; }       // stopped before consent: nothing is saved
+    const dv = jsPsych.data.get().filter({ part: "device" }).values()[0] || {};   // carries the properties added after BASE
+    jsPsych.data.get().push(Object.assign({}, BASE, { device: dv.device, mouse_hand: dv.mouse_hand, key_yes: dv.key_yes, key_no: dv.key_no,
+      part: "interaction_log", aborted: ABORTED || null, interactions: jsPsych.data.getInteractionData().json() }));
+    saveAndRedirect(cleanCsv(jsPsych.data.get().csv()));
+  }
+});
+// jsPsych writes null as the string "null"; blank it so R reads it as missing.
+function cleanCsv(csv) { return csv.replace(/(^|,)"null"(?=,|\r?\n|$)/g, "$1").replace(/(^|,)null(?=,|\r?\n|$)/g, "$1"); }
+
+/* ---------- saving (DataPipe, with checkpoints so that a closed window loses at most half a block) ---------- */
+let CK = 0, LAST = 0;
+function post(name, csv) {
+  return fetchT("https://pipe.jspsych.org/api/data/", { method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "*/*" },
+    body: JSON.stringify({ experimentID: CONFIG.DATAPIPE_ID, filename: name, data: csv }) }, 25000)
+    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); });
+}
+function checkpoint(tag) {
+  if (!CONFIG.DATAPIPE_ID || !CONSENTED) return;
+  const n = jsPsych.data.get().values().length;
+  if (n < 3 || n <= LAST) return;
+  CK += 1;
+  post(SUBJECT.uid + "_p" + String(CK).padStart(2, "0") + "_" + tag + ".csv", cleanCsv(jsPsych.data.get().csv()))
+    .then(() => { LAST = Math.max(LAST, n); }).catch(() => {});
+}
+addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") checkpoint("hidden"); });
+
+function say(h, p) {
+  document.body.innerHTML = '<div class="prose" style="margin-top:90px;text-align:center"><h2>' + h + '</h2><p>' + p +
+    '</p><p style="color:#555;margin-top:22px">Session code<br><span style="font-family:monospace;font-size:24px">' + SUBJECT.uid + '</span></p></div>';
+}
+function saveAndRedirect(csv) {
+  if (!CONFIG.DATAPIPE_ID) { download(csv); setTimeout(redirect, 1500); return; }   // tests only: let the download start first
+  say("Saving your answers…", "<b>Please do not close this window.</b>");
+  post(SUBJECT.uid + ".csv", csv)
+    .catch(() => { say("Still saving…", "Trying again. <b>Please keep this window open.</b>"); return post(SUBJECT.uid + ".csv", csv); })
+    .then(() => { say("Saved.", "One moment…"); setTimeout(redirect, 600); })
+    .catch(() => { download(csv);
+      say("Your answers could not be sent", "A copy named <b>" + SUBJECT.uid + ".csv</b> was downloaded to this computer. Please e-mail it to <b>yucheng.lin@utrgv.edu</b>." +
+        '<br><br><button class="jspsych-btn" onclick="redirect()">Continue</button>'); });
+}
+function download(csv) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = SUBJECT.uid + ".csv"; a.click();
+}
+function redirect() {
+  if (ABORTED) {                       // screened out before the task (device, browser, no consent)
+    // screened out by the device or browser check -> Prolific's screened-out completion; declined consent -> return the study
+    if (SUBJECT.source === "prolific" && CONFIG.PROLIFIC_SCREENOUT_URL && ABORTED !== "no_consent") { location = CONFIG.PROLIFIC_SCREENOUT_URL; return; }
+    const why = { browser: "This study needs a computer with a window of at least 1000 × 650 pixels, a separate mouse and a keyboard.",
+                  no_mouse: "This study needs a separate mouse.", no_consent: "You chose not to take part. Thank you for your time." }[ABORTED] || "";
+    say("Session ended", why + (SUBJECT.source === "prolific" ? " Please return your submission on Prolific." : "")); return;
+  }
+  if (CONFIG.QUALTRICS_URL) {
+    const sep = CONFIG.QUALTRICS_URL.includes("?") ? "&" : "?";
+    location = CONFIG.QUALTRICS_URL + sep + "uid=" + encodeURIComponent(SUBJECT.uid) + "&source=" + SUBJECT.source +
+      "&pid=" + encodeURIComponent(SUBJECT.external_id || "") + "&cond=" + COND + "&list=" + LIST +
+      "&PROLIFIC_PID=" + encodeURIComponent(PID_PROLIFIC || "") + "&STUDY_ID=" + encodeURIComponent(par(["STUDY_ID"]) || "") +
+      "&SESSION_ID=" + encodeURIComponent(par(["SESSION_ID"]) || "") + "&id=" + encodeURIComponent(PID_SONA || "");
+    return;
+  }
+  if (SUBJECT.source === "prolific" && CONFIG.PROLIFIC_COMPLETION_URL) { location = CONFIG.PROLIFIC_COMPLETION_URL; return; }
+  if (SUBJECT.source === "sona" && CONFIG.SONA_CREDIT_URL) { location = CONFIG.SONA_CREDIT_URL + encodeURIComponent(SUBJECT.external_id || ""); return; }
+  say("Thank you.", "You may close this window.");
+}
+let SIZE_WATCH = false;
+function checkSize() { const el = document.getElementById("size-warning"); if (!el) return;
+  const fsScreen = !!document.getElementById("jspsych-fullscreen-btn");
+  el.style.display = (SIZE_WATCH && !fsScreen && (innerWidth < 1000 || innerHeight < 650)) ? "flex" : "none"; }
+addEventListener("resize", checkSize); setInterval(checkSize, 1000);
+
+/* ---------- building blocks ---------- */
+const K = (k) => '<kbd>' + k.toUpperCase() + '</kbd>';
+// The left key (D or J) is always listed first, so the order on the screen matches the order on the keyboard.
+const keyLine = () => { const y = K(KEYMAP.yes) + ' = grammatical', n = K(KEYMAP.no) + ' = not grammatical';
+  return '<p class="keys">' + (KEYMAP.yes < KEYMAP.no ? y + ' &nbsp;&nbsp;&nbsp; ' + n : n + ' &nbsp;&nbsp;&nbsp; ' + y) + '</p>'; };
+const fsNode = () => ({ timeline: [{ type: jsPsychFullscreen, fullscreen_mode: true, message: '<p class="prose">Please return to full screen to continue.</p>',
+                                     button_label: "Return to full screen", data: { part: "fullscreen" } }], conditional_function: () => !(document.fullscreenElement || document.webkitFullscreenElement) });
+/* The fixation cross is drawn in the same layout as the reading screen (text box, end hint and hint line below it),
+   so jsPsych centres both screens alike and the + sits exactly where the first word will appear. */
+const fixationHTML = () => '<div style="position:relative;margin:0 auto;width:' + CONFIG.MOTR.text_width + 'px;font-size:' + CONFIG.MOTR.font_size + 'px;line-height:' + CONFIG.MOTR.line_height +
+  ';text-align:left;font-family:Georgia,serif;color:#999">+</div><div style="width:' + CONFIG.MOTR.text_width + 'px;margin:34px auto 0;text-align:center"><p style="color:#fff;font-size:15px">.</p></div>' +
+  '<p style="min-height:1.4em;margin-top:10px"></p>';
+function readNode(o, tag) {
+  return Object.assign({ type: jsPsychMotr, text: o.text, data: Object.assign({ part: "read" }, tag),
+    span_left: () => CC.span_left, span_right: () => CC.span_right, oneway: () => CC.oneway,   // read when the trial starts (the cell is drawn after consent)
+    on_finish: (d) => { d.window_w = innerWidth; d.window_h = innerHeight; d.fullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement); } }, CONFIG.MOTR);
+}
+let WRONGKEYS = 0, KEYHINT = null;   // presses of keys other than the two answer keys on the current judgment screen
+function trialSeq(o, phase, block, judge = true) {
+  const tag = { phase, block, item: o.item, kind: o.kind, version: o.version, item_type: o.item_type || "", crit: o.crit,
+                correct_answer: o.correct, sentence: o.text };
+  const seq = [fsNode(),
+    { type: jsPsychHtmlKeyboardResponse, choices: "NO_KEYS", trial_duration: CONFIG.ITI, stimulus: fixationHTML(), data: Object.assign({ part: "iti" }, tag) },
+    readNode(o, tag)];
+  if (!judge) return seq;
+  seq.push({ type: jsPsychHtmlKeyboardResponse, choices: () => [KEYMAP.yes, KEYMAP.no],
+    stimulus: () => '<p class="question">Was that sentence grammatical?</p>' + keyLine() + '<p id="keyhint" style="min-height:1.5em;color:#b3452f"></p>',
+    data: Object.assign({ part: "judgment" }, tag),
+    // a key other than the two answer keys does nothing in jsPsych; say which keys to use, and count such presses
+    on_load: () => { WRONGKEYS = 0; KEYHINT = (e) => { const k = String(e.key).toLowerCase();
+        if (k !== KEYMAP.yes && k !== KEYMAP.no && k.length === 1) { WRONGKEYS++; const h = document.getElementById("keyhint");
+          if (h) h.textContent = "Please use the " + KEYMAP.yes.toUpperCase() + " or " + KEYMAP.no.toUpperCase() + " key."; } };
+      document.addEventListener("keydown", KEYHINT); },
+    on_finish: (d) => {
+      document.removeEventListener("keydown", KEYHINT); d.wrong_keys = WRONGKEYS;
+      const k = (d.response === null || d.response === undefined) ? null : String(d.response).toLowerCase();
+      d.answer = k === null ? null : (k === KEYMAP.yes ? "grammatical" : "ungrammatical");
+      d.correct = d.answer === o.correct; d.error = d.answer === null ? null : !d.correct;
+    } });
+  if (phase === "practice") seq.push({ type: jsPsychHtmlKeyboardResponse, choices: "NO_KEYS", trial_duration: 2400,
+    stimulus: () => { const d = jsPsych.data.get().filter({ part: "judgment" }).last(1).values()[0];
+      const why = "The sentence \u201c" + o.text.replace(/[.!?]$/, "") + "\u201d is " + (o.correct === "grammatical" ? "grammatical." : "not grammatical.");
+      return '<p style="font-size:22px;color:' + (d.correct ? '#1a7f37">Correct. ' : '#b3452f">Not quite. ') + why + '</p>'; },
+    data: { part: "feedback" } });
+  return seq;
+}
+
+/* ---------- the experiment ----------
+   The timeline is built at once, but the condition x list cell is drawn only after consent (step "assignment"), so
+   everything that depends on it (instructions, display parameters, which version of each item is shown) is read
+   when the screen appears, through functions and the two list branches of the main task. */
+function setupCell() {
+  CC = CONFIG.CONDITIONS[COND];
+  WINDOW = CC.span_left === 0 ? "one" : (CC.span_left === 1 ? "three" : "all");
+  const cell = { cond: COND, cond_assigned: COND_ASSIGNED, window: WINDOW, oneway: CC.oneway, list: LIST, stage: CONFIG.STAGE };
+  Object.assign(BASE, cell); jsPsych.data.addProperties(cell);    // addProperties also fills the rows already recorded
+  return cell;
+}
+function main() {
+  if (linkCell() === "bad_link") { say("This link is not valid", "The address contains a condition or list that does not exist (cond must be one of " + CODES.join(", ") + "; list 0 or 1). Please check the link."); return; }
+  BASE = { uid: SUBJECT.uid, source: SUBJECT.source, external_id: SUBJECT.external_id, session_start: new Date().toISOString(),
+    materials: STIM.materials_fingerprint, user_agent: navigator.userAgent, screen_w: screen.width, screen_h: screen.height,
+    // what the browser reports about the pointing device: a check on the self-reported mouse (a trackpad also reports
+    // a fine pointer, so this can only catch touch-only devices; the analysis reports it, it excludes no one)
+    pointer_fine: matchMedia("(pointer: fine)").matches, any_pointer_coarse: matchMedia("(any-pointer: coarse)").matches,
+    prolific_study_id: PID_PROLIFIC ? par(["STUDY_ID"]) : null, prolific_session_id: PID_PROLIFIC ? par(["SESSION_ID"]) : null };
+  jsPsych.data.addProperties(BASE);
+
+  const ctl = STIM.controls.map((s) => ({ item: s.item, kind: "control", version: "control", item_type: "scrambled control", crit: s.crit, text: s.text, correct: "ungrammatical" }));
+  const fil = STIM.fillers.map((s) => ({ item: s.item, kind: "filler", version: "filler", item_type: "grammatical filler", crit: null, text: s.text, correct: "grammatical" }));
+  const itemsFor = (L) => STIM.items.map((s) => { const tw = s.list_tw === L;
+    return { item: s.item, kind: "item", version: tw ? "tw" : "gram", item_type: s.item_type, crit: s.crit, text: tw ? s.tw : s.gram, correct: tw ? "ungrammatical" : "grammatical" }; });
+  if (STIM.items.length !== 80 || ctl.length !== 20 || fil.length !== 20 || [0, 1].some((L) => itemsFor(L).filter((o) => o.version === "tw").length !== 40)) {
+    say("Something went wrong", "The materials are incomplete. Please return the study and contact the researcher."); return; }
+  const NMAIN = 120;
+  const timeline = [];
+
+  const windowText = () => ({ one: "Only <b>the word under the mouse pointer</b> is sharp. All other words are hidden under a grey bar.",
+    three: "The word under the mouse pointer is sharp, together with <b>the word just before it and the word just after it</b>. All other words are hidden under a grey bar.",
+    all: "As soon as the pointer reaches the first word, <b>the whole sentence</b> becomes sharp. It stays sharp while the pointer is on the line of text." }[WINDOW]);
+  // The pacing advice is the same in every condition, so that the conditions differ only in what the display allows.
+  const revisitText = () => (CC.oneway
+    ? "<b>You cannot go back.</b> Once you have moved past a word, moving the mouse back shows nothing."
+    : "You can go back to earlier words whenever you like, but moving past the last word ends the sentence.") +
+    " Move at a comfortable reading pace, one word at a time.";
+
+  // 1. device and hand first (Prolific asks for screening at the very start), then full screen, browser check, consent
+  timeline.push({ type: jsPsychHtmlButtonResponse, choices: ["A separate mouse", "A laptop trackpad", "A touchscreen or pen", "Something else"],
+    stimulus: '<div class="prose"><h2>Before we start</h2><p>This study records the path of the mouse while you read, so it needs a computer with a <b>separate mouse</b> and a keyboard. ' +
+      'What will you use to move the cursor? Please answer honestly.</p></div>',
+    data: { part: "device" }, on_finish: (d) => { d.device = ["mouse", "trackpad", "touch", "other"][d.response]; jsPsych.data.addProperties({ device: d.device }); } });
+  if (SUBJECT.source !== "direct" && CONFIG.REQUIRE_MOUSE) timeline.push({ timeline: [{ type: jsPsychCallFunction, data: { part: "no_mouse" },
+      func: () => { ABORTED = "no_mouse"; jsPsych.abortExperiment(""); } }],
+    conditional_function: () => jsPsych.data.get().filter({ part: "device" }).last(1).values()[0].device !== "mouse" });
+  timeline.push({ type: jsPsychHtmlButtonResponse, choices: ["Right hand", "Left hand"],
+    stimulus: '<div class="prose"><p>Which hand will you use for the mouse?</p></div>', data: { part: "mouse_hand" },
+    on_finish: (d) => { const left = d.response === 1;     // the other hand presses the keys: D/F for right-hand mouse users, J/K for left-hand users
+      const pair = left ? ["j", "k"] : ["d", "f"]; const flip = Math.random() < 0.5;
+      KEYMAP = { yes: flip ? pair[0] : pair[1], no: flip ? pair[1] : pair[0] };
+      d.mouse_hand = left ? "left" : "right"; jsPsych.data.addProperties({ mouse_hand: d.mouse_hand, key_yes: KEYMAP.yes, key_no: KEYMAP.no }); } });
+  timeline.push({ type: jsPsychFullscreen, fullscreen_mode: true, message: '<p class="prose">This study runs in full screen. Click the button to switch to full screen.</p>', button_label: "Switch to full screen", data: { part: "fullscreen" } });
+  timeline.push({ type: jsPsychBrowserCheck, minimum_width: 1000, minimum_height: 650,
+    inclusion_function: (d) => d.mobile === false,
+    exclusion_message: () => '<p class="prose">This study needs a computer with a separate mouse and a keyboard. It cannot be done on a phone or tablet.</p>',
+    data: { part: "browser" }, on_finish: (d) => { if (d.mobile !== false || (d.width && d.width < 1000) || (d.height && d.height < 650)) ABORTED = "browser"; else { SIZE_WATCH = true; checkSize(); } } });
+  timeline.push({ type: jsPsychHtmlButtonResponse, choices: ["I agree to take part", "I do not agree"],
+    stimulus: '<div class="prose"><h2>Consent to take part in research</h2>' +
+      '<p>You are invited to take part in a study run by the ' + CONFIG.LAB_NAME + ' at the University of Texas Rio Grande Valley. ' +
+      'You will read short English sentences by moving the mouse over the screen and decide whether each sentence is grammatical. ' +
+      'This part takes about ' + CONFIG.MINUTES + ' minutes. A short questionnaire follows (about 5 minutes); it asks about your computer, what you noticed, your language background, age, gender, race or ethnicity and any reading difficulty. You may skip any question you do not want to answer.</p>' +
+      '<p>We record your mouse movements and key presses in this window, and whether you leave this window or full screen. ' +
+      (SUBJECT.source === "prolific" ? 'Your Prolific ID is stored with your responses only to process payment; it is removed before any data are shared. You will be paid the amount shown on Prolific. ' :
+       SUBJECT.source === "sona" ? 'Your SONA code is stored with your responses only to grant credit; it is removed before any data are shared. You will receive ' + CONFIG.PAYMENT_TEXT + '. ' : '') +
+      'Data are kept on secure research accounts (DataPipe with Google Drive, and Qualtrics, which is set not to record your IP address or location) for as long as UTRGV research policy requires. De-identified data may be shared on a public research repository.</p>' +
+      '<p>Taking part is voluntary. You can stop at any time by closing this window' + (SUBJECT.source === "prolific" ? ' and returning the study on Prolific' : '') + ', without penalty. The answers already sent at that point are kept unless you ask us to delete them: write to the address below with the session code shown when you stop. ' +
+      'There are no known risks beyond those of ordinary computer use.' +
+      (CONFIG.IRB_PROTOCOL ? ' This study was reviewed by the UTRGV Institutional Review Board (protocol ' + CONFIG.IRB_PROTOCOL + ').' : '') +
+      ' Questions about the study: ' + CONFIG.CONTACT + '. ' + CONFIG.IRB_CONTACT + '</p><p>You must be 18 or older and a fluent reader of English.</p></div>',
+    data: { part: "consent" }, on_finish: (d) => { if (d.response === 1) { ABORTED = "no_consent"; jsPsych.abortExperiment(""); return; } CONSENTED = true; checkpoint("consent"); } });
+  timeline.push({ type: jsPsychCallFunction, async: true, data: { part: "assignment" },
+    waiting_message: '<p class="prose" style="text-align:center;margin-top:120px">One moment\u2026</p>',
+    func: (done) => { assign().then(() => done(setupCell())); } });
+
+  // 2. instructions, two sentences to get used to the display, and two questions about the display (instructions and
+  //    questions are repeated after a wrong answer, at most three rounds; rule_errors in the data count the wrong answers)
+  const instr = () => '<div class="prose"><h2>How to read in this study</h2>' +
+    '<p>Each sentence starts hidden. Move the mouse along the line from left to right to read it. ' + windowText() + '</p><p>' + revisitText() + '</p>' +
+    '<p>Start at the first word: a <b>+</b> shows where it begins, and nothing is sharp until the pointer reaches it. When you have read the last word, keep moving the mouse to the right, past the end of the sentence. The sentence then disappears.</p>' +
+    '<p>Then decide whether the sentence was a <b>grammatical English sentence</b>. Some sentences are grammatical and some are not. ' +
+    'Answer as quickly and as accurately as you can. Keep your other hand on the keys:</p>' + keyLine() + '</div>';
+  const getUsed = [{ item: 401, text: "Most people enjoy a warm cup of tea." }, { item: 402, text: "The library opens early on Saturday mornings." }];
+  const rule = {
+    howmany: { q: "How many words are sharp at the same time?", choices: ["One word", "Three words", "The whole sentence"], right: () => ({ one: 0, three: 1, all: 2 }[WINDOW]) },
+    back: { q: "Can you read a word again after you have moved past it?", choices: ["Yes, I can go back", "No, I cannot go back"], right: () => (CC.oneway ? 1 : 0) } };
+  const ruleQ = (k) => ({ type: jsPsychHtmlButtonResponse, choices: rule[k].choices, stimulus: '<div class="prose"><p><b>Quick check.</b> ' + rule[k].q + '</p></div>',
+    data: { part: "rule_check", rule: k }, on_finish: (d) => { d.rule_correct = d.response === rule[k].right(); } });
+  timeline.push({ timeline: [
+      { type: jsPsychHtmlButtonResponse, choices: ["Continue"], stimulus: instr, data: { part: "instructions" } },
+      // the two sentences to get used to the display are read in the first round only
+      { timeline: [
+          { type: jsPsychHtmlButtonResponse, choices: ["Try it"], stimulus: '<div class="prose"><p>First, two sentences just to get used to the display. No answer is needed after them.</p></div>', data: { part: "get_used_intro" } },
+          ...getUsed.flatMap((s) => trialSeq({ item: s.item, kind: "familiarization", version: "familiarization", crit: null, text: s.text, correct: "grammatical" }, "familiarization", 0, false))],
+        conditional_function: () => jsPsych.data.get().filter({ part: "rule_check" }).count() === 0 },
+      ruleQ("howmany"), ruleQ("back"),
+      { timeline: [{ type: jsPsychHtmlButtonResponse, choices: ["Read the instructions again"],
+          stimulus: () => { const wrong = jsPsych.data.get().filter({ part: "rule_check" }).last(2).values().filter((x) => !x.rule_correct).map((x) => x.rule);
+            const say = { howmany: "how many words are sharp at the same time", back: "whether you can go back to a word" };
+            return '<div class="prose"><p style="color:#b3452f">Your answer about ' + wrong.map((k) => say[k]).join(" and about ") +
+              ' did not match how the display works in this study.</p><p>' + windowText() + ' ' + revisitText() + '</p><p>Please read the instructions once more.</p></div>'; },
+          data: { part: "rule_retry" } }],
+        conditional_function: () => jsPsych.data.get().filter({ part: "rule_check" }).last(2).values().some((x) => !x.rule_correct) &&
+                                    jsPsych.data.get().filter({ part: "rule_check" }).count() < 6 },
+      // after the third round with a wrong answer the study goes on, with a short reminder of the rule
+      { timeline: [{ type: jsPsychHtmlButtonResponse, choices: ["Continue"],
+          stimulus: () => '<div class="prose"><p>Please keep in mind how the display works in this study:</p><p>' + windowText() + ' ' + revisitText() + '</p></div>', data: { part: "rule_reminder" } }],
+        conditional_function: () => jsPsych.data.get().filter({ part: "rule_check" }).last(2).values().some((x) => !x.rule_correct) &&
+                                    jsPsych.data.get().filter({ part: "rule_check" }).count() >= 6 }],
+    loop_function: () => jsPsych.data.get().filter({ part: "rule_check" }).last(2).values().some((x) => !x.rule_correct) &&
+                         jsPsych.data.get().filter({ part: "rule_check" }).count() < 6 });
+
+  // 3. practice with feedback
+  timeline.push({ type: jsPsychHtmlButtonResponse, choices: ["Start the practice"], stimulus: () => '<div class="prose"><p>Now six practice sentences. After each one, decide whether it was grammatical. You will see whether your answer was right.</p>' + keyLine() + '</div>', data: { part: "practice_intro" } });
+  timeline.push(...jsPsych.randomization.shuffle(STIM.practice).flatMap((s) =>
+    trialSeq({ item: s.item, kind: "practice", version: "practice", item_type: "practice", crit: null, text: s.text, correct: s.correct }, "practice", 0)));
+  timeline.push({ type: jsPsychHtmlButtonResponse, choices: ["Start"], on_start: () => checkpoint("practice"),
+    stimulus: () => '<div class="prose"><h2>Now the real study</h2><p>There are ' + NMAIN + ' sentences in ' + CONFIG.NBLOCK + ' parts, with a short break after each part. ' +
+      'From now on there is no feedback.</p><p>' + windowText() + ' ' + revisitText() + '</p>' + keyLine() + '</div>', data: { part: "start_main" } });
+
+  // 4. the 120 sentences. Both lists are built; the branch of the list drawn at assignment runs.
+  /* Each block gets the same mix: every cell (TW of each item type, counterpart of each item type, control, filler) is
+     shuffled and dealt round-robin over the blocks; order within a block is random. */
+  const mainFor = (L) => {
+    const blocks = Array.from({ length: CONFIG.NBLOCK }, () => []), cells = {};
+    itemsFor(L).concat(ctl, fil).forEach((o) => { const k = o.kind + "|" + o.version + "|" + o.item_type; (cells[k] = cells[k] || []).push(o); });
+    let rr = 0;
+    Object.keys(cells).sort().forEach((k) => jsPsych.randomization.shuffle(cells[k]).forEach((o) => { blocks[rr % CONFIG.NBLOCK].push(o); rr++; }));
+    const tl = [];
+    for (let b = 0; b < CONFIG.NBLOCK; b++) {
+      jsPsych.randomization.shuffle(blocks[b]).forEach((o, i, arr) => {
+        const seq = trialSeq(o, "main", b + 1);
+        if (i === Math.floor(arr.length / 2)) seq[1].on_start = () => checkpoint("block" + (b + 1) + "_half");
+        tl.push(...seq);
+      });
+      tl.push({ type: jsPsychCallFunction, data: { part: "block_quality" }, func: () => {
+        const blk = jsPsych.data.get().filter({ block: b + 1 });
+        const rd = blk.filter({ part: "read" }).values();
+        // filler accuracy over all parts so far (5 fillers per part is too few to judge one part alone), and a reminder
+        // only after at least 3 filler errors
+        const jf = jsPsych.data.get().filter({ part: "judgment", kind: "filler", phase: "main" }).values();
+        // proportion of words that were ever sharp (from the display log), as in the analysis's coverage rule
+        const visProp = (x) => { const v = new Set(); JSON.parse(x.vis_log).forEach((e) => { for (let i = e[1]; i >= 0 && i <= e[2]; i++) v.add(i); });
+                                 return v.size / JSON.parse(x.word_boxes).length; };
+        const seenProp = rd.length ? rd.reduce((a, x) => a + visProp(x), 0) / rd.length : null;
+        const acc = jf.length ? jf.filter((x) => x.correct).length / jf.length : null;
+        QC.lowSeen = seenProp !== null && seenProp < CONFIG.QUALITY.words_seen_min; QC.lowAcc = acc !== null && acc < CONFIG.QUALITY.filler_acc_min && jf.filter((x) => !x.correct).length >= 3;
+        return { qc_block: b + 1, qc_words_seen: seenProp, qc_filler_acc: acc, qc_flag_seen: QC.lowSeen, qc_flag_acc: QC.lowAcc }; } });
+      if (b < CONFIG.NBLOCK - 1) tl.push({ type: jsPsychHtmlButtonResponse, choices: ["Continue"], on_start: () => checkpoint("block" + (b + 1)),
+        stimulus: () => '<div class="prose" style="text-align:center"><h2>Short break</h2><p>Part ' + (b + 1) + ' of ' + CONFIG.NBLOCK + ' done. Rest your eyes and hand. Continue when ready.</p>' + keyLine() +
+          (QC.lowSeen ? '<p style="color:#b3452f"><b>A reminder:</b> please move the pointer over every word of each sentence, one word at a time.</p>' : '') +
+          (QC.lowAcc ? '<p style="color:#b3452f"><b>A reminder:</b> please read each sentence fully and decide carefully whether it was grammatical.</p>' : '') + '</div>',
+        data: { part: "break" } });
+    }
+    return tl;
+  };
+  [0, 1].forEach((L) => timeline.push({ timeline: mainFor(L), conditional_function: () => LIST === L }));
+  timeline.push({ type: jsPsychHtmlButtonResponse, choices: ["Continue"], on_start: () => checkpoint("reading_task"),
+    stimulus: '<div class="prose" style="text-align:center"><h2>The reading task is finished</h2><p>Thank you. ' +
+      (CONFIG.QUALTRICS_URL ? 'A short questionnaire (about 5 minutes) follows. Please complete it: your submission is complete only when you reach its end.' : '') + '</p>' +
+      '<p style="color:#555;margin-top:22px">Your session code (the questionnaire may ask for it)<br><span style="font-family:monospace;font-size:24px">' + SUBJECT.uid + '</span></p></div>',
+    data: { part: "end_task" } });
+  timeline.push({ type: jsPsychFullscreen, fullscreen_mode: false, data: { part: "fullscreen" } });
+  jsPsych.run(timeline);
+}
+main();
+</script>
+</body>
+</html>
