@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployment check</title>
+<script src="lib/jspsych.js"></script>
+<script src="lib/plugin-html-keyboard-response.js"></script>
+<script src="lib/plugin-html-button-response.js"></script>
+<script src="lib/plugin-fullscreen.js"></script>
+<script src="lib/plugin-browser-check.js"></script>
+<script src="lib/plugin-call-function.js"></script>
+<script src="lib/plugin-motr.js"></script>
+<script src="stimuli.js"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #222; }
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; } td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: top; } td.s { width: 90px; font-weight: 600; }
+  .pass { color: #1a7f37; } .fail { color: #b3452f; } .warn { color: #9a6700; }
+  #verdict { margin-top: 26px; padding: 14px 18px; border-radius: 8px; font-size: 18px; }
+  #box { position: relative; height: 140px; border: 1px dashed #bbb; border-radius: 8px; margin-top: 10px; }
+  button { font-size: 16px; padding: 8px 18px; }
+  #demo { margin-top: 14px; padding: 20px 0; border: 1px solid #eee; border-radius: 8px; min-height: 120px; }
+</style>
+</head>
+<body>
+<h1>Deployment check — TW-MoTR (Experiment 2)</h1>
+<p>Open this page at the same address participants will use (<code>.../deployment_check.html</code>). It checks the files, the configuration of <code>experiment.html</code> and this browser. It sends nothing to DataPipe unless you click the DataPipe button.</p>
+<p><button id="run">Run all checks</button></p>
+<table id="results"></table>
+<div id="verdict"></div>
+<h2>Try each display condition</h2>
+<p>Choose a condition, start with the pointer left of the grey bar and move it along the sentence. Nothing is sharp until the pointer reaches the first word. W1F and W1O: one word sharp; W3F and W3O: three; ALL: the whole sentence. W1O and W3O: moving back shows nothing. Unread words are a grey bar, so their lengths cannot be seen.
+<select id="cond"><option>W1F</option><option>W1O</option><option>W3F</option><option>W3O</option><option>ALL</option></select> <button id="demobtn">Show a sentence</button></p>
+<div id="demo"></div><p id="demores"></p>
+<h2>Mouse sampling</h2>
+<p>Move the cursor inside the box for a few seconds.</p>
+<div id="box"></div><p id="samplerate"></p>
+<h2>DataPipe</h2><p><button id="dp">Send a test file to DataPipe</button> <span id="dpres"></span></p>
+<p><button id="dpc">Test the balanced condition assignment</button> <span id="dpcres"></span><br><small>This asks DataPipe for one condition, as a participant's session does, so it moves DataPipe's balanced sequence on by one. Do it once, before the pilot.</small></p>
+<p>Study links (one Prolific study for all conditions; see the setup guide, Step 5):<br><code id="links"></code></p>
+<script>
+const T = document.getElementById("results");
+const row = (name, state, detail) => { const tr = document.createElement("tr"); tr.innerHTML = '<td class="s ' + state + '">' + state.toUpperCase() + '</td><td><b>' + name + '</b><br>' + detail + '</td>'; T.appendChild(tr); return state; };
+let CFG = null;
+async function run() {
+  T.innerHTML = ""; const states = [];
+  const ok = (c, name, good, bad) => states.push(row(name, c ? "pass" : "fail", c ? good : bad));
+  const warn = (c, name, good, bad) => states.push(row(name, c ? "pass" : "warn", c ? good : bad));
+  const libs = typeof initJsPsych === "function" && typeof jsPsychMotr === "function" && typeof jsPsychCallFunction === "function" && typeof jsPsychBrowserCheck === "function";
+  ok(libs, "Libraries", "jsPsych and all plugins loaded", "a file in lib/ is missing");
+  const P = libs && jsPsychMotr.info ? jsPsychMotr.info.parameters : {};
+  ok(!!(P.reveal && P.mask && P.oneway), "MoTR plugin version", "word-locked windows, one-way reading and the bar mask available (plugin " + (libs && jsPsychMotr.info ? jsPsychMotr.info.version : "?") + ")", "lib/plugin-motr.js is an old version (needs reveal, oneway and mask)");
+  const S = (typeof STIM === "object") ? STIM : null;
+  ok(S && S.items.length === 80 && S.controls.length === 20 && S.fillers.length === 20 && S.practice.length === 6 && S.materials_fingerprint === EXPECTED_FP, "Stimuli",
+     S ? S.items.length + " items, " + S.controls.length + " controls, " + S.fillers.length + " fillers, " + S.practice.length + " practice; fingerprint " + S.materials_fingerprint : "", "stimuli.js missing, incomplete, or not the version checked before delivery (fingerprint " + (S ? S.materials_fingerprint : "-") + ", expected " + EXPECTED_FP + ")");
+  if (S) { const per = [0, 1].map((L) => ["verb + pronoun", "verb + preposition"].map((t) => S.items.filter((s) => s.list_tw === L && s.item_type === t).length));
+    ok(per.every((a) => a[0] === 20 && a[1] === 20), "Lists", "each list shows 20 TW items of each type", "the lists are unbalanced: " + JSON.stringify(per)); }
+  try { const html = await (await fetch("experiment.html", { cache: "no-store" })).text();
+    const g = (k) => { const m = html.match(new RegExp(k + ':\\s*"([^"]*)"')); return m ? m[1] : null; };
+    CFG = { DATAPIPE_ID: g("DATAPIPE_ID"), QUALTRICS_URL: g("QUALTRICS_URL"), IRB_PROTOCOL: g("IRB_PROTOCOL"), PROLIFIC_SCREENOUT_URL: g("PROLIFIC_SCREENOUT_URL"),
+            BALANCED: /BALANCED_ASSIGNMENT:\s*true/.test(html), IRB_CONTACT: g("IRB_CONTACT") };
+    CFG.STAGE = +((html.match(/STAGE:\s*(\d)/) || [0, 1])[1]); CFG.NCELLS = CFG.STAGE === 2 ? 8 : 10;
+    states.push(row("Data collection stage", "pass", "stage " + CFG.STAGE + ": " + (CFG.STAGE === 2 ? "the four factorial conditions; DataPipe must be set to 8 conditions" : "all five conditions; DataPipe must be set to 10 conditions")));
+    ok(!!CFG.DATAPIPE_ID, "DataPipe ID", "set (" + CFG.DATAPIPE_ID + ")", "CONFIG.DATAPIPE_ID is empty: data would only be downloaded to the participant's computer (blocking for online data collection)");
+    ok(!!CFG.QUALTRICS_URL, "Qualtrics URL", "set", "CONFIG.QUALTRICS_URL is empty: no questionnaire and no return to Prolific (blocking)");
+    warn(!!CFG.IRB_PROTOCOL, "IRB protocol", "set (" + CFG.IRB_PROTOCOL + ")", "CONFIG.IRB_PROTOCOL is empty; the consent form will not show a protocol number");
+    warn(CFG.IRB_CONTACT && !/^\[/.test(CFG.IRB_CONTACT), "IRB contact in the consent form", "set", "CONFIG.IRB_CONTACT still holds the placeholder; copy the rights contact from the approved consent form");
+    warn(!!CFG.PROLIFIC_SCREENOUT_URL, "Prolific screen-out URL", "set", "CONFIG.PROLIFIC_SCREENOUT_URL is empty; people without a mouse are asked to return the study instead of being sent to a screened-out completion");
+    warn(CFG.BALANCED, "Balanced assignment", "on: condition x list is drawn from DataPipe after consent (test it below)", "off: conditions are drawn at random");
+  } catch (e) { states.push(row("experiment.html", "fail", "could not read experiment.html at this address: " + e.message)); }
+  // Load the experiment itself in a hidden frame (a forced test cell, so nothing is assigned or uploaded) and check
+  // that its first screen appears. Reading CONFIG as text alone would pass a page that fails to run.
+  const live = await new Promise((resolve) => {
+    const fr = document.createElement("iframe"); fr.style.cssText = "position:absolute;left:-5000px;width:1200px;height:800px";
+    const errs = []; let done = false;
+    const finish = (r) => { if (done) return; done = true; fr.remove(); resolve(r); };
+    fr.onload = () => { try { fr.contentWindow.addEventListener("error", (e) => errs.push(e.message)); } catch (e) {}
+      setTimeout(() => { let txt = ""; try { txt = fr.contentDocument.body.innerText; } catch (e) {}
+        finish({ ok: /Before we start/.test(txt) && !errs.length, txt: txt.slice(0, 80), errs }); }, 2500); };
+    setTimeout(() => finish({ ok: false, txt: "", errs: ["no answer after 10 s"] }), 10000);
+    fr.src = "experiment.html?cond=W1F&list=0&_check=" + Date.now(); document.body.appendChild(fr);
+  });
+  ok(live.ok, "Experiment starts", "experiment.html runs and shows its first screen", "experiment.html did not show its first screen" + (live.errs.length ? " (" + live.errs.join("; ") + ")" : "") + (live.txt ? "; it showed: " + live.txt : ""));
+  ok(innerWidth >= 1000 && innerHeight >= 650, "Window size", innerWidth + " × " + innerHeight, innerWidth + " × " + innerHeight + " is below 1000 × 650; participants would see the size warning");
+  ok(typeof fetch === "function" && CSS.supports("border-radius", "3px") && !!document.documentElement.requestFullscreen, "Browser features", "fetch, full screen and CSS supported", "this browser lacks a feature the study needs (fetch or full screen)");
+  warn(matchMedia("(pointer: fine)").matches, "Pointer", "a fine pointer (mouse or trackpad) is present", "no fine pointer detected");
+  const base = location.href.replace(/deployment_check\.html.*$/, "experiment.html");
+  document.getElementById("links").innerHTML = "Prolific: " + base + "?PROLIFIC_PID={{%PROLIFIC_PID%}}&amp;STUDY_ID={{%STUDY_ID%}}&amp;SESSION_ID={{%SESSION_ID%}}<br>" +
+    "SONA: " + base + "?id=%SURVEY_CODE%<br>" + "Test one condition (does not use DataPipe's condition sequence; the data are uploaded, marked source = direct, so delete them before the analysis): " + base + "?cond=W1O&amp;list=0";
+  const fails = states.filter((s) => s === "fail").length, warns = states.filter((s) => s === "warn").length;
+  const v = document.getElementById("verdict");
+  v.style.background = fails ? "#fde8e6" : (warns ? "#fff4d6" : "#e6f4ea");
+  v.textContent = fails ? fails + " problem(s) must be fixed before collecting data." : (warns ? "No blocking problems; " + warns + " warning(s) to review." : "All checks passed.");
+}
+document.getElementById("run").onclick = run;
+const EXPECTED_FP = "4143910307";   // written by 1_project/materials/build_stimuli.py
+const CONDS = { W1F: [0, 0, false], W1O: [0, 0, true], W3F: [1, 1, false], W3O: [1, 1, true], ALL: [99, 99, false] };
+let demoPsych = null;
+const demoBtn = document.getElementById("demobtn");
+demoBtn.onclick = () => {
+  if (typeof jsPsychMotr !== "function" || typeof STIM !== "object") { document.getElementById("demores").textContent = "lib/plugin-motr.js or stimuli.js is missing"; return; }
+  const c = CONDS[document.getElementById("cond").value]; document.getElementById("demores").textContent = ""; demoBtn.disabled = true;
+  demoPsych = initJsPsych({ display_element: "demo", on_finish: () => { demoBtn.disabled = false; const d = demoPsych.data.get().last(1).values()[0];
+    document.getElementById("demores").textContent = "Reading time " + Math.round(d.reading_time) + " ms, " + d.n_samples + " samples, " + JSON.parse(d.vis_log).length + " display changes, words seen " + d.words_seen + ", blocked samples " + d.blocked_samples + "."; } });
+  // the same settings as CONFIG.MOTR in experiment.html
+  demoPsych.run([{ type: jsPsychMotr, text: STIM.items[0].tw, reveal: "words", mask: "bar", focus_dx: 0, focus_dy: 0, span_left: c[0], span_right: c[1], oneway: c[2], font_size: 26, line_height: 1.6, text_width: 820, end_mode: "exit" }]);
+};
+document.getElementById("dp").onclick = async () => { const out = document.getElementById("dpres");
+  if (!CFG || !CFG.DATAPIPE_ID) { out.textContent = "run the checks first; no DataPipe ID set"; return; }
+  try { const name = "deploycheck_" + Date.now() + ".csv";
+    const r = await fetch("https://pipe.jspsych.org/api/data/", { method: "POST", headers: { "Content-Type": "application/json", "Accept": "*/*" }, body: JSON.stringify({ experimentID: CFG.DATAPIPE_ID, filename: name, data: "trial_type,note\ncheck,deployment check\n" }) });
+    out.textContent = r.ok ? "OK: " + name + " was accepted. Delete it in the data folder (Google Drive)." : "DataPipe answered " + r.status + ": check the ID, that the experiment is active, and that its storage is connected"; }
+  catch (e) { out.textContent = "no connection: " + e.message; } };
+document.getElementById("dpc").onclick = async () => { const out = document.getElementById("dpcres");
+  if (!CFG || !CFG.DATAPIPE_ID) { out.textContent = "run the checks first; no DataPipe ID set"; return; }
+  try { const r = await fetch("https://pipe.jspsych.org/api/condition/", { method: "POST", headers: { "Content-Type": "application/json", "Accept": "*/*" }, body: JSON.stringify({ experimentID: CFG.DATAPIPE_ID }) });
+    const j = await r.json(); const n = parseInt(j.condition, 10);
+    const nc = CFG.NCELLS;
+    out.textContent = (r.ok && n >= 0 && n < nc) ? "OK: DataPipe returned condition " + n + " (of 0-" + (nc - 1) + "; stage " + CFG.STAGE + ")." :
+      "DataPipe answered " + r.status + " " + JSON.stringify(j) + ": switch condition assignment on and set the number of conditions to " + nc + " (stage " + CFG.STAGE + "). Until then sessions draw a random condition."; }
+  catch (e) { out.textContent = "no connection: " + e.message; } };
+const box = document.getElementById("box"); let t = [];
+box.addEventListener("mousemove", () => { t.push(performance.now()); if (t.length > 300) t.shift();
+  if (t.length > 50) { const d = []; for (let i = 1; i < t.length; i++) d.push(t[i] - t[i - 1]); d.sort((a, b) => a - b);
+    document.getElementById("samplerate").textContent = "Median interval between mouse events: " + d[d.length >> 1].toFixed(1) + " ms (" + Math.round(1000 / d[d.length >> 1]) + " Hz). Chrome reports mouse events at the display refresh rate (about 60 Hz); this is expected."; } });
+</script>
+</body>
+</html>
